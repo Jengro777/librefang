@@ -4453,7 +4453,29 @@ args = ["-y", "@modelcontextprotocol/server-filesystem", "/path"]</pre>
                 </div>
               </div>
 
-              <template x-if="selectedProviderObj && !providerIsConfigured(selectedProviderObj)">
+              <template x-if="selectedProviderObj && !providerIsConfigured(selectedProviderObj) && selectedProvider === 'claude-code'">
+                <div class="card" style="border-left:3px solid var(--accent);margin-top:16px">
+                  <div class="card-header">Configure Claude Code</div>
+                  <div class="text-xs text-dim mb-2" style="line-height:1.8">
+                    Claude Code uses its own CLI authentication &mdash; no API key needed.
+                  </div>
+                  <div style="background:var(--bg);border-radius:4px;padding:10px 12px;margin-bottom:12px;font-size:12px;line-height:1.8">
+                    <div><span style="color:var(--accent)">1.</span> Install: <code style="color:var(--accent-light);background:var(--bg-secondary);padding:1px 4px;border-radius:2px">npm install -g @anthropic-ai/claude-code</code></div>
+                    <div><span style="color:var(--accent)">2.</span> Authenticate: <code style="color:var(--accent-light);background:var(--bg-secondary);padding:1px 4px;border-radius:2px">claude auth</code></div>
+                    <div><span style="color:var(--accent)">3.</span> Click <strong>Detect</strong> below to verify</div>
+                  </div>
+                  <button class="btn btn-primary btn-sm" @click="detectClaudeCode()" :disabled="testingProvider">
+                    <span x-show="!testingProvider">Detect Claude Code</span>
+                    <span x-show="testingProvider" class="spinner" style="width:10px;height:10px;border-width:2px"></span>
+                  </button>
+                  <div x-show="testResult" class="mt-2">
+                    <div x-show="testResult && testResult.status === 'ok'" class="badge badge-success" style="padding:6px 12px">Claude Code detected<span x-show="testResult && testResult.latency_ms" x-text="' (' + (testResult ? testResult.latency_ms : '') + 'ms)'"></span></div>
+                    <div x-show="testResult && testResult.status !== 'ok'" class="badge badge-error" style="padding:6px 12px">Claude Code CLI not detected. Make sure you&rsquo;ve run: <code>npm install -g @anthropic-ai/claude-code &amp;&amp; claude auth</code></div>
+                  </div>
+                </div>
+              </template>
+
+              <template x-if="selectedProviderObj && !providerIsConfigured(selectedProviderObj) && selectedProvider !== 'claude-code'">
                 <div class="card" style="border-left:3px solid var(--accent);margin-top:16px">
                   <div class="card-header" x-text="'Configure ' + selectedProviderObj.display_name"></div>
                   <div class="text-xs text-dim mb-2" x-show="selectedProviderObj.api_key_env">

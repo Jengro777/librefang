@@ -12,6 +12,13 @@ use serde::Deserialize;
 use tokio::io::AsyncBufReadExt;
 use tracing::{debug, warn};
 
+/// Environment variables safe to pass through to the Claude Code subprocess.
+/// XDG_* and CLAUDE_* prefixes are handled dynamically.
+const SAFE_ENV_PREFIXES: &[&str] = &[
+    "PATH", "HOME", "USER", "USERPROFILE", "TERM", "LANG", "SHELL",
+    "SYSTEMROOT", "PROGRAMFILES", "APPDATA", "LOCALAPPDATA", "TEMP", "TMP",
+];
+
 /// LLM driver that delegates to the Claude Code CLI.
 pub struct ClaudeCodeDriver {
     cli_path: String,
@@ -142,7 +149,20 @@ impl LlmDriver for ClaudeCodeDriver {
             cmd.arg("--model").arg(model);
         }
 
-        // SECURITY: Don't inherit all env vars — only safe ones
+        // SECURITY: Clear env and selectively re-add safe vars to prevent
+        // leaking API keys from other providers into the subprocess.
+        cmd.env_clear();
+        for key in SAFE_ENV_PREFIXES {
+            if let Ok(val) = std::env::var(key) {
+                cmd.env(key, val);
+            }
+        }
+        for (key, val) in std::env::vars() {
+            if key.starts_with("XDG_") || key.starts_with("CLAUDE_") {
+                cmd.env(key, val);
+            }
+        }
+
         cmd.stdout(std::process::Stdio::piped());
         cmd.stderr(std::process::Stdio::piped());
 
@@ -212,6 +232,20 @@ impl LlmDriver for ClaudeCodeDriver {
 
         if let Some(ref model) = model_flag {
             cmd.arg("--model").arg(model);
+        }
+
+        // SECURITY: Clear env and selectively re-add safe vars to prevent
+        // leaking API keys from other providers into the subprocess.
+        cmd.env_clear();
+        for key in SAFE_ENV_PREFIXES {
+            if let Ok(val) = std::env::var(key) {
+                cmd.env(key, val);
+            }
+        }
+        for (key, val) in std::env::vars() {
+            if key.starts_with("XDG_") || key.starts_with("CLAUDE_") {
+                cmd.env(key, val);
+            }
         }
 
         cmd.stdout(std::process::Stdio::piped());
@@ -329,10 +363,16 @@ pub fn claude_code_available() -> bool {
         || claude_credentials_exist()
 }
 
-/// Check if Claude credentials file exists (~/.claude/.credentials.json).
+/// Check if Claude credentials file exists.
+///
+/// Different Claude CLI versions store credentials at different paths:
+/// - `~/.claude/.credentials.json` (older versions)
+/// - `~/.claude/credentials.json` (newer versions)
 fn claude_credentials_exist() -> bool {
     if let Some(home) = home_dir() {
-        home.join(".claude").join(".credentials.json").exists()
+        let claude_dir = home.join(".claude");
+        claude_dir.join(".credentials.json").exists()
+            || claude_dir.join("credentials.json").exists()
     } else {
         false
     }
