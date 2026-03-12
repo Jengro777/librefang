@@ -55,6 +55,12 @@ librefang start
 # 仪表板地址：http://localhost:4545
 ```
 
+**或者使用 Homebrew 安装：**
+```bash
+brew tap librefang/tap
+brew install librefang
+```
+
 ---
 
 ## 核心特性

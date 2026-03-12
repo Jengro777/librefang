@@ -55,6 +55,12 @@ librefang start
 # Panel: http://localhost:4545
 ```
 
+**O instala con Homebrew:**
+```bash
+brew tap librefang/tap
+brew install librefang
+```
+
 ---
 
 ## Características Principales

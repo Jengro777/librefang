@@ -64,6 +64,12 @@ librefang start
 # Dashboard live at http://localhost:4545
 ```
 
+**Or install via Homebrew:**
+```bash
+brew tap librefang/tap
+brew install librefang
+```
+
 <details>
 <summary><strong>Windows</strong></summary>
 

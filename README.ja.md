@@ -55,6 +55,12 @@ librefang start
 # ダッシュボード：http://localhost:4545
 ```
 
+**または Homebrew でインストール：**
+```bash
+brew tap librefang/tap
+brew install librefang
+```
+
 ---
 
 ## コア機能

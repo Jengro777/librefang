@@ -55,6 +55,12 @@ librefang start
 # 대시보드: http://localhost:4545
 ```
 
+**또는 Homebrew로 설치:**
+```bash
+brew tap librefang/tap
+brew install librefang
+```
+
 ---
 
 ## 핵심 기능
