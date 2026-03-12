@@ -193,7 +193,10 @@ impl MemorySubstrate {
     }
 
     /// List all sessions for a specific agent.
-    pub fn list_agent_sessions(&self, agent_id: AgentId) -> LibreFangResult<Vec<serde_json::Value>> {
+    pub fn list_agent_sessions(
+        &self,
+        agent_id: AgentId,
+    ) -> LibreFangResult<Vec<serde_json::Value>> {
         self.sessions.list_agent_sessions(agent_id)
     }
 
@@ -560,7 +563,11 @@ impl MemorySubstrate {
 
 #[async_trait]
 impl Memory for MemorySubstrate {
-    async fn get(&self, agent_id: AgentId, key: &str) -> LibreFangResult<Option<serde_json::Value>> {
+    async fn get(
+        &self,
+        agent_id: AgentId,
+        key: &str,
+    ) -> LibreFangResult<Option<serde_json::Value>> {
         let store = self.structured.clone();
         let key = key.to_string();
         tokio::task::spawn_blocking(move || store.get(agent_id, &key))

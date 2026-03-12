@@ -92,7 +92,9 @@ impl McpBackend {
 
     /// Find agent ID by tool name (strip `librefang_agent_` prefix, match by name).
     fn resolve_tool_agent(&self, tool_name: &str) -> Option<String> {
-        let agent_name = tool_name.strip_prefix("librefang_agent_")?.replace('_', "-");
+        let agent_name = tool_name
+            .strip_prefix("librefang_agent_")?
+            .replace('_', "-");
         let agents = self.list_agents();
         // Try exact match first (with underscores replaced by hyphens)
         for (id, name, _) in &agents {
@@ -329,7 +331,11 @@ fn handle_message(backend: &McpBackend, msg: &Value) -> Option<Value> {
 
         _ => {
             // Unknown method — always respond with error
-            Some(jsonrpc_error(rid, -32601, &format!("Method not found: {method}")))
+            Some(jsonrpc_error(
+                rid,
+                -32601,
+                &format!("Method not found: {method}"),
+            ))
         }
     }
 }

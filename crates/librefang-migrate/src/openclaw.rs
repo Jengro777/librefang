@@ -125,17 +125,21 @@ struct OpenClawAgentTools {
 
 /// Extract a profile name from a Value (string or {name: "..."}  object).
 fn extract_profile(val: &serde_json::Value) -> Option<String> {
-    val.as_str()
-        .map(|s| s.to_string())
-        .or_else(|| val.get("name").and_then(|v| v.as_str()).map(|s| s.to_string()))
+    val.as_str().map(|s| s.to_string()).or_else(|| {
+        val.get("name")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string())
+    })
 }
 
 /// Extract a list of strings from a Value (array of strings, single string, or object keys).
 fn extract_string_list(val: &serde_json::Value) -> Vec<String> {
     match val {
-        serde_json::Value::Array(arr) => {
-            arr.iter().filter_map(|v| v.as_str()).map(|s| s.to_string()).collect()
-        }
+        serde_json::Value::Array(arr) => arr
+            .iter()
+            .filter_map(|v| v.as_str())
+            .map(|s| s.to_string())
+            .collect(),
         serde_json::Value::String(s) => vec![s.clone()],
         serde_json::Value::Object(map) => map.keys().cloned().collect(),
         _ => vec![],
@@ -517,8 +521,7 @@ fn build_channel_table(
     let allow_list = allow_from.map(extract_string_list).unwrap_or_default();
 
     // Add overrides sub-table if any policy is set
-    let has_overrides =
-        dm_policy.is_some() || group_policy.is_some() || !allow_list.is_empty();
+    let has_overrides = dm_policy.is_some() || group_policy.is_some() || !allow_list.is_empty();
 
     if has_overrides {
         let mut overrides = toml::map::Map::new();
@@ -2261,7 +2264,8 @@ fn report_skipped_features(root: &OpenClawRoot, source: &Path, report: &mut Migr
         report.skipped.push(SkippedItem {
             kind: ItemKind::Config,
             name: "hooks".to_string(),
-            reason: "Webhook hooks not supported — use LibreFang's event system instead".to_string(),
+            reason: "Webhook hooks not supported — use LibreFang's event system instead"
+                .to_string(),
         });
     }
 
@@ -3025,8 +3029,9 @@ fn scan_legacy_skills(source: &Path, report: &mut MigrationReport) {
                     report.skipped.push(SkippedItem {
                         kind: ItemKind::Skill,
                         name: name.clone(),
-                        reason: "Node.js skill — run with `librefang skill install` after migration"
-                            .to_string(),
+                        reason:
+                            "Node.js skill — run with `librefang skill install` after migration"
+                                .to_string(),
                     });
                 } else {
                     report.skipped.push(SkippedItem {

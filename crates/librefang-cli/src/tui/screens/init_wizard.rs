@@ -922,7 +922,9 @@ pub fn run() -> InitResult {
 fn handle_migration_key(
     state: &mut State,
     code: KeyCode,
-    migrate_tx: &std::sync::mpsc::Sender<Result<librefang_migrate::report::MigrationReport, String>>,
+    migrate_tx: &std::sync::mpsc::Sender<
+        Result<librefang_migrate::report::MigrationReport, String>,
+    >,
 ) {
     match state.migration_phase {
         MigrationPhase::Detecting => {} // auto-resolves, no keys
@@ -950,7 +952,9 @@ fn handle_migration_key(
                     let target_dir = if let Ok(h) = std::env::var("LIBREFANG_HOME") {
                         PathBuf::from(h)
                     } else {
-                        dirs::home_dir().unwrap_or_else(|| PathBuf::from(".")).join(".librefang")
+                        dirs::home_dir()
+                            .unwrap_or_else(|| PathBuf::from("."))
+                            .join(".librefang")
                     };
                     let tx = migrate_tx.clone();
                     std::thread::spawn(move || {
@@ -1118,7 +1122,7 @@ complex_threshold = 500
 
     let config = format!(
         r#"# LibreFang Agent OS configuration
-# See https://github.com/RightNow-AI/librefang for documentation
+# See https://github.com/RightNow-AI/openfang for documentation
 
 api_listen = "127.0.0.1:4200"
 

@@ -7,7 +7,7 @@
 
 <p align="center">
   Open-source Agent OS built in Rust. 137K LOC. 14 crates. 1,767+ tests. Zero clippy warnings.<br/>
-  <strong>Forked from `RightNow-AI/librefang`. Transparent governance. Preserved attribution. Compatible with the existing `librefang` CLI.</strong>
+  <strong>Forked from `RightNow-AI/openfang`. Transparent governance. Preserved attribution. Compatible with the existing `librefang` CLI.</strong>
 </p>
 
 <p align="center">
@@ -27,7 +27,7 @@
 
 ---
 
-> **LibreFang is a community-maintained fork of [`RightNow-AI/librefang`](https://github.com/RightNow-AI/librefang).**
+> **LibreFang is a community-maintained fork of [`RightNow-AI/openfang`](https://github.com/RightNow-AI/openfang).**
 >
 > The codebase, binary, crate names, and config paths still use `librefang` for compatibility during the transition. LibreFang is taking a different path on project governance: we actively accept community contributions, review them in public, merge accepted work through normal GitHub flow, and preserve contributor credit when code is adapted.
 
