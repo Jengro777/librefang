@@ -1141,7 +1141,7 @@ impl Default for QueueConfig {
 /// Configure in config.toml:
 /// ```toml
 /// [queue.concurrency]
-/// main_lane = 1
+/// main_lane = 3
 /// cron_lane = 2
 /// subagent_lane = 3
 /// ```
@@ -1159,7 +1159,7 @@ pub struct QueueConcurrencyConfig {
 impl Default for QueueConcurrencyConfig {
     fn default() -> Self {
         Self {
-            main_lane: 1,
+            main_lane: 3,
             cron_lane: 2,
             subagent_lane: 3,
         }
