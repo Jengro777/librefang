@@ -16,7 +16,7 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::{mpsc, watch};
-use tracing::{debug, info, warn};
+use tracing::{debug, error, info, warn};
 use zeroize::Zeroizing;
 
 /// Maximum backoff duration on API failures.
@@ -696,6 +696,10 @@ impl ChannelAdapter for TelegramAdapter {
                 let updates = match body["result"].as_array() {
                     Some(arr) => arr,
                     None => {
+                        warn!(
+                            "Telegram getUpdates returned ok=true but result is not an array: {}",
+                            body["result"]
+                        );
                         tokio::time::sleep(poll_interval).await;
                         continue;
                     }
@@ -719,8 +723,15 @@ impl ChannelAdapter for TelegramAdapter {
                     )
                     .await
                     {
-                        Some(m) => m,
-                        None => continue, // filtered out or unparseable
+                        Ok(m) => m,
+                        Err(DropReason::Filtered(reason)) => {
+                            debug!("Telegram message filtered: {reason}");
+                            continue;
+                        }
+                        Err(DropReason::ParseError(reason)) => {
+                            warn!("Telegram message dropped before agent dispatch: {reason}");
+                            continue;
+                        }
                     };
 
                     // Tag message with account_id for multi-bot routing
@@ -735,7 +746,10 @@ impl ChannelAdapter for TelegramAdapter {
                     );
 
                     if tx.send(msg).await.is_err() {
-                        // Receiver dropped — bridge is shutting down
+                        error!(
+                            "Telegram dispatch channel closed — message dropped. \
+                             Bridge receiver may have been deallocated."
+                        );
                         return;
                     }
                 }
@@ -890,7 +904,15 @@ impl ChannelAdapter for TelegramAdapter {
     }
 }
 
-/// Parse a Telegram update JSON into a `ChannelMessage`, or `None` if filtered/unparseable.
+/// Reason a Telegram update was not dispatched to an agent.
+enum DropReason {
+    /// Intentional policy filter (e.g. allowed_users). Log at debug level.
+    Filtered(String),
+    /// Unexpected parse failure or malformed data. Log at warn level.
+    ParseError(String),
+}
+
+/// Parse a Telegram update JSON into a `ChannelMessage`, or a `DropReason` if it cannot be dispatched.
 /// Handles both `message` and `edited_message` update types.
 /// Resolve a Telegram file_id to a download URL via the Bot API.
 async fn telegram_get_file_url(
@@ -946,7 +968,7 @@ async fn parse_telegram_update(
     client: &reqwest::Client,
     api_base_url: &str,
     bot_username: Option<&str>,
-) -> Option<ChannelMessage> {
+) -> Result<ChannelMessage, DropReason> {
     let update_id = update["update_id"].as_i64().unwrap_or(0);
     let message = match update
         .get("message")
@@ -954,8 +976,9 @@ async fn parse_telegram_update(
     {
         Some(m) => m,
         None => {
-            debug!("Telegram: dropping update {update_id} — no message or edited_message field");
-            return None;
+            return Err(DropReason::ParseError(format!(
+                "update {update_id} has no message or edited_message field"
+            )));
         }
     };
 
@@ -964,8 +987,9 @@ async fn parse_telegram_update(
         let uid = match from["id"].as_i64() {
             Some(id) => id,
             None => {
-                debug!("Telegram: dropping update {update_id} — from.id is not an integer");
-                return None;
+                return Err(DropReason::ParseError(format!(
+                    "update {update_id}: from.id is not an integer"
+                )));
             }
         };
         let first_name = from["first_name"].as_str().unwrap_or("Unknown");
@@ -981,29 +1005,33 @@ async fn parse_telegram_update(
         let uid = match sender_chat["id"].as_i64() {
             Some(id) => id,
             None => {
-                debug!("Telegram: dropping update {update_id} — sender_chat.id is not an integer");
-                return None;
+                return Err(DropReason::ParseError(format!(
+                    "update {update_id}: sender_chat.id is not an integer"
+                )));
             }
         };
         let title = sender_chat["title"].as_str().unwrap_or("Unknown Channel");
         (uid, title.to_string())
     } else {
-        debug!("Telegram: dropping update {update_id} — no from or sender_chat field");
-        return None;
+        return Err(DropReason::ParseError(format!(
+            "update {update_id} has no from or sender_chat field"
+        )));
     };
 
     // Security: check allowed_users (compare as strings for consistency)
     let user_id_str = user_id.to_string();
     if !allowed_users.is_empty() && !allowed_users.iter().any(|u| u == &user_id_str) {
-        debug!("Telegram: ignoring message from unlisted user {user_id}");
-        return None;
+        return Err(DropReason::Filtered(format!(
+            "update {update_id}: user {user_id} not in allowed_users list"
+        )));
     }
 
     let chat_id = match message["chat"]["id"].as_i64() {
         Some(id) => id,
         None => {
-            debug!("Telegram: dropping update {update_id} — chat.id is not an integer");
-            return None;
+            return Err(DropReason::ParseError(format!(
+                "update {update_id}: chat.id is not an integer"
+            )));
         }
     };
 
@@ -1124,8 +1152,9 @@ async fn parse_telegram_update(
         ChannelContent::Location { lat, lon }
     } else {
         // Unsupported message type (stickers, polls, etc.)
-        debug!("Telegram: dropping update {update_id} — unsupported message type (no text/photo/document/voice/video/video_note/location)");
-        return None;
+        return Err(DropReason::Filtered(format!(
+            "update {update_id}: unsupported message type (no text/photo/document/voice/video/video_note/location)"
+        )));
     };
 
     // Extract reply-to-message context (Telegram `reply_to_message` field).
@@ -1134,7 +1163,7 @@ async fn parse_telegram_update(
         let reply_text = reply["text"].as_str().or_else(|| reply["caption"].as_str());
         if let Some(quoted) = reply_text {
             let reply_sender = reply["from"]["first_name"].as_str().unwrap_or("Someone");
-            // 截断长引用，避免给 LLM 塞过多无关 context
+            // Truncate long quotes to avoid feeding the LLM too much irrelevant context
             let truncated = if quoted.len() > 200 {
                 format!("{}...", &quoted[..quoted.floor_char_boundary(200)])
             } else {
@@ -1143,7 +1172,7 @@ async fn parse_telegram_update(
             let prefix = format!("[Replying to {reply_sender}: \"{truncated}\"]\n");
             match content {
                 ChannelContent::Text(t) => ChannelContent::Text(format!("{prefix}{t}")),
-                other => other, // 对 Command/Image 等不修改
+                other => other, // Leave Command/Image etc. unchanged
             }
         } else {
             content
@@ -1190,7 +1219,7 @@ async fn parse_telegram_update(
         }
     }
 
-    Some(ChannelMessage {
+    Ok(ChannelMessage {
         channel: ChannelType::Telegram,
         platform_message_id: message_id.to_string(),
         sender: ChannelUser {
@@ -1413,7 +1442,7 @@ mod tests {
         // Empty allowed_users = allow all
         let msg =
             parse_telegram_update(&update, &[], "fake:token", &client, DEFAULT_API_URL, None).await;
-        assert!(msg.is_some());
+        assert!(msg.is_ok());
 
         // Non-matching allowed_users = filter out
         let blocked: Vec<String> = vec!["111".to_string(), "222".to_string()];
@@ -1426,7 +1455,7 @@ mod tests {
             None,
         )
         .await;
-        assert!(msg.is_none());
+        assert!(msg.is_err());
 
         // Matching allowed_users = allow
         let allowed: Vec<String> = vec!["999".to_string()];
@@ -1439,7 +1468,7 @@ mod tests {
             None,
         )
         .await;
-        assert!(msg.is_some());
+        assert!(msg.is_ok());
     }
 
     #[tokio::test]
@@ -1740,7 +1769,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_parse_no_from_no_sender_chat_drops() {
-        // Updates with neither `from` nor `sender_chat` should be dropped with debug logging.
+        // Updates with neither `from` nor `sender_chat` should be dropped with warn logging.
         let update = serde_json::json!({
             "update_id": 501,
             "message": {
@@ -1754,7 +1783,7 @@ mod tests {
         let client = test_client();
         let msg =
             parse_telegram_update(&update, &[], "fake:token", &client, DEFAULT_API_URL, None).await;
-        assert!(msg.is_none());
+        assert!(msg.is_err());
     }
 
     #[tokio::test]
