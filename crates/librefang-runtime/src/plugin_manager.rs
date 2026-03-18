@@ -6,7 +6,7 @@
 //! - `requirements.txt` — optional Python dependencies
 //!
 //! # Install sources
-//! - **GitHub registry**: `librefang/plugin-registry` repo, one directory per plugin
+//! - **GitHub registry**: configurable `owner/repo` (default: `librefang/plugin-registry`)
 //! - **Local path**: copy from a local directory
 //! - **Git URL**: clone a git repo into the plugins directory
 
@@ -83,8 +83,12 @@ pub struct PluginInfo {
 /// Source for plugin installation.
 #[derive(Debug, Clone)]
 pub enum PluginSource {
-    /// Install from the official GitHub registry (`librefang/plugin-registry`).
-    Registry { name: String },
+    /// Install from a GitHub registry (`owner/repo`).
+    /// `None` defaults to `librefang/plugin-registry`.
+    Registry {
+        name: String,
+        github_repo: Option<String>,
+    },
     /// Install from a local directory (copy).
     Local { path: PathBuf },
     /// Install from a git URL (clone).
@@ -165,7 +169,12 @@ pub async fn install_plugin(source: &PluginSource) -> Result<PluginInfo, String>
 
     match source {
         PluginSource::Local { path } => install_from_local(path, &plugins),
-        PluginSource::Registry { name } => install_from_registry(name, &plugins).await,
+        PluginSource::Registry { name, github_repo } => {
+            let repo = github_repo
+                .as_deref()
+                .unwrap_or("librefang/plugin-registry");
+            install_from_registry(name, repo, &plugins).await
+        }
         PluginSource::Git { url, branch } => {
             install_from_git(url, branch.as_deref(), &plugins).await
         }
@@ -216,9 +225,30 @@ fn install_from_local(src: &Path, plugins_dir: &Path) -> Result<PluginInfo, Stri
     get_plugin_info(&manifest.name)
 }
 
-/// Install from the GitHub registry.
-async fn install_from_registry(name: &str, plugins_dir: &Path) -> Result<PluginInfo, String> {
+/// Validate that a GitHub repo string looks like `owner/repo`.
+fn validate_github_repo(repo: &str) -> Result<(), String> {
+    let parts: Vec<&str> = repo.split('/').collect();
+    if parts.len() != 2
+        || parts[0].is_empty()
+        || parts[1].is_empty()
+        || repo.contains("..")
+        || repo.contains(' ')
+    {
+        return Err(format!(
+            "Invalid GitHub repo '{repo}': must be 'owner/repo'"
+        ));
+    }
+    Ok(())
+}
+
+/// Install from a GitHub plugin registry (`owner/repo`).
+async fn install_from_registry(
+    name: &str,
+    github_repo: &str,
+    plugins_dir: &Path,
+) -> Result<PluginInfo, String> {
     validate_plugin_name(name)?;
+    validate_github_repo(github_repo)?;
     let target_dir = plugins_dir.join(name);
     if target_dir.exists() {
         return Err(format!(
@@ -226,8 +256,7 @@ async fn install_from_registry(name: &str, plugins_dir: &Path) -> Result<PluginI
         ));
     }
 
-    // Download from GitHub registry: librefang/plugin-registry/tree/main/plugins/<name>/
-    let base_url = "https://api.github.com/repos/librefang/plugin-registry/contents/plugins";
+    let base_url = format!("https://api.github.com/repos/{github_repo}/contents/plugins");
     let listing_url = format!("{base_url}/{name}");
 
     let client = reqwest::Client::builder()
@@ -277,6 +306,52 @@ async fn install_from_registry(name: &str, plugins_dir: &Path) -> Result<PluginI
 
     info!(plugin = name, "Installed plugin from registry");
     get_plugin_info(name)
+}
+
+/// Lightweight entry returned when browsing a registry.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct RegistryPluginEntry {
+    pub name: String,
+    pub registry: String,
+}
+
+/// List available plugin directory names from a GitHub registry.
+pub async fn list_registry_plugins(github_repo: &str) -> Result<Vec<RegistryPluginEntry>, String> {
+    validate_github_repo(github_repo)?;
+    let url = format!("https://api.github.com/repos/{github_repo}/contents/plugins");
+    let client = reqwest::Client::builder()
+        .user_agent(crate::USER_AGENT)
+        .timeout(std::time::Duration::from_secs(15))
+        .build()
+        .map_err(|e| format!("HTTP client error: {e}"))?;
+
+    let resp = client
+        .get(&url)
+        .header("Accept", "application/vnd.github.v3+json")
+        .send()
+        .await
+        .map_err(|e| format!("Failed to fetch registry '{github_repo}': {e}"))?;
+
+    if !resp.status().is_success() {
+        return Err(format!(
+            "Registry '{github_repo}' not accessible (HTTP {})",
+            resp.status()
+        ));
+    }
+
+    let entries: Vec<GitHubContent> = resp
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse registry listing: {e}"))?;
+
+    Ok(entries
+        .into_iter()
+        .filter(|e| e.content_type == "dir")
+        .map(|e| RegistryPluginEntry {
+            name: e.name,
+            registry: github_repo.to_string(),
+        })
+        .collect())
 }
 
 /// Install from a git URL by cloning.
@@ -848,6 +923,7 @@ after_turn = "hooks/after_turn.py"
         // 1. Install echo-memory from registry
         let source = PluginSource::Registry {
             name: "echo-memory".to_string(),
+            github_repo: None,
         };
         let info = install_plugin(&source)
             .await
