@@ -2783,7 +2783,7 @@ system_prompt = "You are a helpful assistant."
         if let Err(e) = self.metering.check_all_and_record(
             &usage_record,
             &manifest.resources,
-            &self.config.budget,
+            &self.budget_config(),
         ) {
             tracing::warn!(
                 agent_id = %agent_id,
@@ -3458,7 +3458,7 @@ system_prompt = "You are a helpful assistant."
                     if let Err(e) = kernel_clone.metering.check_all_and_record(
                         &usage_record,
                         &manifest.resources,
-                        &kernel_clone.config.budget,
+                        &kernel_clone.budget_config(),
                     ) {
                         tracing::warn!(
                             agent_id = %agent_id,
@@ -4412,7 +4412,7 @@ system_prompt = "You are a helpful assistant."
         if let Err(e) = self.metering.check_all_and_record(
             &usage_record,
             &manifest.resources,
-            &self.config.budget,
+            &self.budget_config(),
         ) {
             // Quota exceeded after the LLM call — log but still return the
             // result (the tokens were already consumed by the provider).
